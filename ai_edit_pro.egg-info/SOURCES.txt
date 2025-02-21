@@ -1,0 +1,15 @@
+README.md
+setup.py
+ai_edit_pro.egg-info/PKG-INFO
+ai_edit_pro.egg-info/SOURCES.txt
+ai_edit_pro.egg-info/dependency_links.txt
+ai_edit_pro.egg-info/entry_points.txt
+ai_edit_pro.egg-info/requires.txt
+ai_edit_pro.egg-info/top_level.txt
+src/__init__.py
+src/ai_processor.py
+src/main.py
+src/video_processor.py
+src/transitions/__init__.py
+src/transitions/base.py
+src/transitions/effects.py

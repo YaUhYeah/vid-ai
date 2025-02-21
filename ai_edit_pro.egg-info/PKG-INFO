@@ -1,0 +1,117 @@
+Metadata-Version: 2.2
+Name: ai-edit-pro
+Version: 0.1.0
+Summary: AI-powered video editor for creating viral content
+Home-page: https://github.com/openhands/ai-edit-pro
+Author: OpenHands
+Author-email: openhands@all-hands.dev
+Keywords: video editing,ai,machine learning,viral content
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: End Users/Desktop
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Topic :: Multimedia :: Video :: Non-Linear Editor
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: PyQt5>=5.15.0
+Requires-Dist: moviepy>=1.0.3
+Requires-Dist: opencv-python>=4.5.0
+Requires-Dist: transformers>=4.15.0
+Requires-Dist: torch>=1.9.0
+Requires-Dist: numpy>=1.19.0
+Requires-Dist: ffmpeg-python>=0.2.0
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# AI-Edit Pro
+
+An AI-powered video editor that helps you create viral content with ease. Simply describe your vision, import your media, and let AI handle the editing.
+
+## Features
+
+- AI-driven video editing based on natural language prompts
+- Multiple transition effects with customizable parameters
+- Support for various video formats (MP4, MKV, AVI, MOV)
+- Optimized export presets for different platforms (YouTube, Instagram, TikTok)
+- Modern, user-friendly interface
+- Drag-and-drop media import
+- Real-time preview
+- Background processing
+
+## Installation
+
+```bash
+pip install ai-edit-pro
+```
+
+## Usage
+
+1. Launch the application:
+```bash
+ai-edit-pro
+```
+
+2. Enter your video requirements in the prompt box
+3. Import your media files (videos, audio, images)
+4. Choose your export format and platform
+5. Click "Generate Viral Video" and wait for processing
+
+## For Developers
+
+### Adding Custom Transitions
+
+You can create custom transition effects by inheriting from the `TransitionEffect` base class:
+
+```python
+from ai_edit_pro.transitions import TransitionEffect
+from moviepy.editor import VideoFileClip, CompositeVideoClip
+
+class MyCustomTransition(TransitionEffect):
+    def __init__(self, duration: float = 1.0, **kwargs):
+        super().__init__(duration, **kwargs)
+    
+    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip) -> VideoFileClip:
+        # Implement your transition logic here
+        return CompositeVideoClip([clip1, clip2])
+
+# Register your transition
+from ai_edit_pro.transitions.effects import TRANSITIONS
+TRANSITIONS['my_custom'] = MyCustomTransition
+```
+
+### Export Presets
+
+You can modify export presets in the `video_processor.py` file:
+
+```python
+export_presets = {
+    'custom_preset': {
+        'size': (1920, 1080),
+        'fps': 60,
+        'bitrate': '12000k',
+        'audio_bitrate': '320k'
+    }
+}
+```
+
+## Requirements
+
+- Python 3.8 or higher
+- FFmpeg
+- GPU recommended for faster processing
+
+## License
+
+MIT License

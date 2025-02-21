@@ -1,0 +1,2 @@
+[console_scripts]
+ai-edit-pro = src.main:main
