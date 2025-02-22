@@ -1,42 +1,48 @@
-from moviepy.editor import *
-from moviepy.video.tools.segmenting import findObjects
-import cv2
+# video_processor.py
+
+import os
+import gc
 import numpy as np
-from typing import List, Dict, Any, Tuple
-import json
+import multiprocessing as mp
+
+# Explicit submodule imports for MoviePy 2.1.2
+from moviepy.video.io.VideoFileClip import VideoFileClip
+from moviepy.video.compositing.CompositeVideoClip import CompositeVideoClip, concatenate_videoclips
+from moviepy.audio.AudioClip import CompositeAudioClip
+
+# -------------------- Transition Effect Classes --------------------
 
 class TransitionEffect:
-    """Base class for transition effects"""
     def __init__(self, duration: float = 1.0):
         self.duration = duration
-    
-    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip) -> VideoFileClip:
-        raise NotImplementedError
+
+    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip):
+        raise NotImplementedError("Transition effect must implement the apply method.")
 
 class CrossFadeTransition(TransitionEffect):
-    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip) -> VideoFileClip:
-        return CompositeVideoClip([
+    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip):
+        comp = CompositeVideoClip([
             clip1,
             clip2.set_start(clip1.duration - self.duration)
-        ]).crossfadein(self.duration)
+        ])
+        return comp.crossfadein(self.duration)
 
 class SlideTransition(TransitionEffect):
     def __init__(self, duration: float = 1.0, direction: str = 'left'):
         super().__init__(duration)
         self.direction = direction
-    
-    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip) -> VideoFileClip:
+
+    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip):
         w, h = clip1.size
+        # Map each direction to a function that computes movement at t=1.
         direction_map = {
-            'left': lambda t: ('x', w * t / self.duration),
+            'left':  lambda t: ('x', w * t / self.duration),
             'right': lambda t: ('x', -w * t / self.duration),
-            'up': lambda t: ('y', h * t / self.duration),
-            'down': lambda t: ('y', -h * t / self.duration)
+            'up':    lambda t: ('y', h * t / self.duration),
+            'down':  lambda t: ('y', -h * t / self.duration)
         }
-        
         axis, move = direction_map[self.direction](1)
-        moving_clip = clip2.set_position(lambda t: {axis: move * (1 - t/self.duration)})
-        
+        moving_clip = clip2.set_position(lambda t: {axis: move * (1 - t / self.duration)})
         return CompositeVideoClip([
             clip1,
             moving_clip.set_start(clip1.duration - self.duration)
@@ -46,17 +52,24 @@ class ZoomTransition(TransitionEffect):
     def __init__(self, duration: float = 1.0, zoom_in: bool = True):
         super().__init__(duration)
         self.zoom_in = zoom_in
-    
-    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip) -> VideoFileClip:
-        scale = lambda t: 0.1 + 0.9 * t/self.duration if self.zoom_in else 1.9 - 0.9 * t/self.duration
+
+    def apply(self, clip1: VideoFileClip, clip2: VideoFileClip):
+        scale = (lambda t: 0.1 + 0.9 * t / self.duration) if self.zoom_in else \
+                (lambda t: 1.9 - 0.9 * t / self.duration)
         zoomed_clip = clip2.resize(lambda t: scale(t))
         return CompositeVideoClip([
             clip1,
             zoomed_clip.set_start(clip1.duration - self.duration)
         ])
 
+# -------------------- VideoProcessor Class --------------------
+
 class VideoProcessor:
-    def __init__(self):
+    def __init__(self, low_resource_mode=False):
+        self.low_resource_mode = low_resource_mode
+        # Ensure a default music_track attribute exists.
+        self.music_track = None
+
         self.transitions = {
             'crossfade': CrossFadeTransition,
             'slide_left': lambda d: SlideTransition(d, 'left'),
@@ -66,122 +79,71 @@ class VideoProcessor:
             'zoom_in': lambda d: ZoomTransition(d, True),
             'zoom_out': lambda d: ZoomTransition(d, False)
         }
-        
-        # Video export presets optimized for different platforms
-        self.export_presets = {
-            'tiktok': {
-                'size': (1080, 1920),
-                'fps': 60,
-                'bitrate': '8000k',
-                'audio_bitrate': '192k'
-            },
-            'instagram': {
-                'size': (1080, 1080),
-                'fps': 30,
-                'bitrate': '6000k',
-                'audio_bitrate': '192k'
-            },
-            'youtube': {
-                'size': (1920, 1080),
-                'fps': 60,
-                'bitrate': '12000k',
-                'audio_bitrate': '320k'
+
+        if self.low_resource_mode:
+            self.export_presets = {
+                'tiktok': {'size': (540, 960), 'fps': 30, 'bitrate': '4000k', 'audio_bitrate': '128k'},
+                'instagram': {'size': (540, 540), 'fps': 24, 'bitrate': '3500k', 'audio_bitrate': '128k'},
+                'youtube': {'size': (1280, 720), 'fps': 30, 'bitrate': '6000k', 'audio_bitrate': '192k'}
             }
-        }
-    
-    def add_custom_transition(self, name: str, transition_class: type):
-        """API for adding custom transition effects"""
-        if not issubclass(transition_class, TransitionEffect):
-            raise ValueError("Custom transition must inherit from TransitionEffect")
-        self.transitions[name] = transition_class
-    
-    def process_video(self, 
-                     clips: List[VideoFileClip],
-                     style_params: Dict[str, float],
-                     viral_params: Dict[str, float]) -> VideoFileClip:
-        """Process video clips according to style and viral parameters"""
-        
-        # Apply viral optimization
-        hook_clip = self._create_hook(clips[0], viral_params['hook_duration'])
+        else:
+            self.export_presets = {
+                'tiktok': {'size': (1080, 1920), 'fps': 60, 'bitrate': '8000k', 'audio_bitrate': '192k'},
+                'instagram': {'size': (1080, 1080), 'fps': 30, 'bitrate': '6000k', 'audio_bitrate': '192k'},
+                'youtube': {'size': (1920, 1080), 'fps': 60, 'bitrate': '12000k', 'audio_bitrate': '320k'}
+            }
+
+    def process_video(self, clips, style_params, viral_params):
+        # Create a hook clip from the first clip.
+        hook_clip = clips[0].subclip(0, min(viral_params.get('hook_duration', 3), clips[0].duration))
+        hook_clip = hook_clip.resize(lambda t: 1 + 0.1 * t)
         processed_clips = [hook_clip]
-        
-        # Process remaining clips
+
         for i, clip in enumerate(clips[1:], 1):
-            # Adjust clip duration based on engagement
-            duration = style_params['pacing'] * clip.duration
+            duration = style_params.get('pacing', 1.0) * clip.duration
             processed_clip = clip.subclip(0, duration)
-            
-            # Apply transition
             if i > 0:
                 transition = self._get_transition(processed_clips[-1], processed_clip, style_params)
                 processed_clips[-1] = transition
-            
             processed_clips.append(processed_clip)
-        
-        # Concatenate all clips
-        final_video = concatenate_videoclips(processed_clips)
-        
-        # Add music if provided
-        if hasattr(self, 'music_track'):
+
+        final_video = concatenate_videoclips(processed_clips, method="compose")
+        if self.music_track:
             final_video = self._add_music(final_video)
-        
+
         return final_video
-    
-    def _create_hook(self, clip: VideoFileClip, duration: float) -> VideoFileClip:
-        """Create an attention-grabbing hook from the first clip"""
-        hook = clip.subclip(0, min(duration, clip.duration))
-        
-        # Add zoom effect
-        hook = hook.resize(lambda t: 1 + 0.1 * t)
-        
-        # Add text overlay if needed
-        # hook = self._add_hook_text(hook)
-        
-        return hook
-    
-    def _get_transition(self, 
-                       clip1: VideoFileClip, 
-                       clip2: VideoFileClip, 
-                       style_params: Dict[str, float]) -> VideoFileClip:
-        """Select and apply appropriate transition"""
-        transition_type = np.random.choice(list(self.transitions.keys()))
-        transition = self.transitions[transition_type](style_params['transition_frequency'])
-        return transition.apply(clip1, clip2)
-    
-    def _add_music(self, video: VideoFileClip) -> VideoFileClip:
-        """Add background music with beat-synced transitions"""
+
+    def _get_transition(self, clip1, clip2, style_params):
+        if self.low_resource_mode:
+            fade = CrossFadeTransition(duration=0.5)
+            return fade.apply(clip1, clip2)
+        else:
+            t_type = np.random.choice(list(self.transitions.keys()))
+            transition = self.transitions[t_type](style_params.get('transition_frequency', 1.0))
+            return transition.apply(clip1, clip2)
+
+    def _add_music(self, video):
         music = self.music_track
         if music.duration > video.duration:
             music = music.subclip(0, video.duration)
         else:
             music = music.loop(duration=video.duration)
-        
-        # Normalize audio levels
-        music = music.volumex(0.6)  # Background music at 60% volume
-        
+        music = music.volumex(0.6)
         return video.set_audio(CompositeAudioClip([video.audio, music]))
-    
-    def export_video(self, 
-                    video: VideoFileClip,
-                    output_path: str,
-                    format: str = 'mp4',
-                    preset: str = 'youtube') -> None:
-        """Export video with optimized settings for viral content"""
-        
-        # Get export settings
-        settings = self.export_presets[preset].copy()
-        
-        # Adjust video size and settings
+
+    def export_video(self, video, output_path, format='mp4', preset='youtube'):
+        settings = self.export_presets[preset]
         video = video.resize(settings['size'])
-        
-        # Export with format-specific settings
+        # Refresh the frame pipeline
+        video = video.fl_image(lambda frame: frame)
+
         format_settings = {
             'mp4': {'codec': 'libx264', 'audio_codec': 'aac'},
             'mkv': {'codec': 'libx264', 'audio_codec': 'aac'},
             'avi': {'codec': 'libx264', 'audio_codec': 'mp3'},
             'mov': {'codec': 'libx264', 'audio_codec': 'aac'}
         }
-        
+        ffmpeg_preset = 'ultrafast' if self.low_resource_mode else 'faster'
         video.write_videofile(
             output_path,
             fps=settings['fps'],
@@ -189,6 +151,31 @@ class VideoProcessor:
             audio_codec=format_settings[format]['audio_codec'],
             bitrate=settings['bitrate'],
             audio_bitrate=settings['audio_bitrate'],
-            threads=4,
-            preset='faster'  # Use 'faster' preset for quicker encoding
+            threads=1,
+            preset=ffmpeg_preset,
+            remove_temp=True
         )
+
+        if hasattr(video.reader, 'close_proc'):
+            video.reader.close_proc()
+
+        gc.collect()
+
+# -------------------- Subprocess Export Function --------------------
+
+def export_video_in_subprocess(video, output_path, format, preset, low_resource_mode):
+    """
+    This function runs in a separate process to export the video.
+    """
+    processor = VideoProcessor(low_resource_mode=low_resource_mode)
+    processor.export_video(video, output_path, format, preset)
+
+# -------------------- Export Wrapper --------------------
+
+def export_video_wrapper(video, output_path, format='mp4', preset='youtube', low_resource_mode=False):
+    """
+    Spawns a separate process to export the video.
+    """
+    p = mp.Process(target=export_video_in_subprocess, args=(video, output_path, format, preset, low_resource_mode))
+    p.start()
+    p.join()

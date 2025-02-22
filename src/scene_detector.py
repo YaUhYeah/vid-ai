@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from typing import List, Tuple
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 
 class SceneDetector:
     def __init__(self, threshold: float = 30.0, min_scene_length: float = 0.5):
@@ -65,4 +65,4 @@ class SceneDetector:
     
     def auto_cut(self, clip: VideoFileClip, scenes: List[Tuple[float, float]]) -> List[VideoFileClip]:
         """Cut video into subclips based on detected scenes."""
-        return [clip.subclip(start, end) for start, end in scenes]
+        return [clip.with_section_cut_out(start, end) for start, end in scenes]

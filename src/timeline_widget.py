@@ -1,9 +1,9 @@
 from PyQt5.QtWidgets import (QWidget, QScrollArea, QVBoxLayout, QHBoxLayout,
                              QPushButton, QLabel, QFrame, QSizePolicy)
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QRect
-from PyQt5.QtGui import QPainter, QColor, QPen, QLinearGradient, QImage, QPixmap
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QPoint, QRect, QMimeData
+from PyQt5.QtGui import QPainter, QColor, QPen, QLinearGradient, QImage, QPixmap, QDrag
 import numpy as np
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 import librosa
 
 class WaveformWidget(QWidget):
